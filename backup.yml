@@ -1,1 +1,64 @@
+name: Backup kemono.cr to Release
 
+on:
+  workflow_dispatch:   # 手动触发
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # 需要写入 Release 的权限
+
+    steps:
+      # 检出仓库（主要用于存放临时说明文件，非必须）
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # 安装 wget
+      - name: Install wget
+        run: sudo apt-get update && sudo apt-get install -y wget
+
+      # 下载网站
+      - name: Mirror website
+        run: |
+          mkdir -p backup
+          wget \
+            --mirror \
+            --page-requisites \
+            --convert-links \
+            --adjust-extension \
+            --no-parent \
+            --wait=2 \
+            --limit-rate=500K \
+            --timeout=15 \
+            --tries=3 \
+            --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+            -e robots=off \
+            --directory-prefix=backup \
+            "https://kemono.cr/"
+
+      # 打包（排除可能存在的 wget 日志文件）
+      - name: Create archive
+        run: |
+          cd backup
+          tar -czf ../kemono_backup_$(date +'%Y%m%d_%H%M%S').tar.gz .
+          cd ..
+
+      # 获取当前日期和 tag
+      - name: Set tag name
+        id: tag
+        run: echo "tag=backup-$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+
+      # 创建 Release 并上传压缩包
+      - name: Create Release and upload asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "Backup ${{ steps.tag.outputs.tag }}"
+          body: |
+            Full mirror of kemono.cr captured on ${{ steps.tag.outputs.tag }}
+            Use `tar -xzf filename.tar.gz` to restore.
+          files: |
+            kemono_backup_*.tar.gz
+          draft: false
+          prerelease: false
